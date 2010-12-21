@@ -1,0 +1,24 @@
+Finds the difference between a list of ports that you want to
+have on your system and the list of ports currently installed.
+
+When called as portdiff, it produces diff(1)-like output, when
+called as portorphans it prints a list of ports that are installed
+but are not in your list of wanted ports.
+
+To create your list of wanted ports, do something like:
+
+$ portorphans | perl -pe 's/-\d.*$//' > ~/.portdiffrc
+
+then edit the .portdiffrc file to remove the ports you don't want.
+
+My usual port maintenance routine goes something like:
+
+1) portupgrade -a
+2) portorphans
+   a) If portorphans returns nothing, I'm done
+   b) If portorphans' output contains a port I wish to keep,
+      I add that to ~/.portdiffrc and goto 2.
+   c) If portorphans returns some output, I run
+      'portorphans | xargs pkg_delete' and goto 2.
+
+This keeps the list of ports installed on my machine to a minimum.

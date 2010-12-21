@@ -1,0 +1,178 @@
+#!/usr/local/bin/perl
+# Copyright (c) 2010
+# Conor McDermottroe.  All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice,
+#    this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+# 3. Neither the name of the author nor the names of any contributors to the
+#    software may be used to endorse or promote products derived from this
+#    software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE
+# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+
+use strict;
+use warnings;
+
+# This program works differently depending on how it's called
+my $mode = "portdiff";
+if ($0 =~ /\/portorphans$/o) {
+	$mode = "portorphans";
+}
+
+# Where the ``database'' of installed ports lives
+my $pkg_dir = "/var/db/pkg";
+
+# Where the list of wanted ports lives
+my @rc_files =	(
+					"/root/.wanted_ports",
+					"$ENV{HOME}/.wanted_ports",
+					"/root/.portdiffrc",
+					"$ENV{HOME}/.portdiffrc"
+				);
+my $wanted_ports_list = "";
+foreach my $rc_file (@rc_files) {
+	if (-r $rc_file) {
+		$wanted_ports_list = $rc_file;
+	}
+}
+
+# Storage for the final list of ports
+my @portsdiff;
+
+# If we have a list of desired ports, exclude those
+# from the final listing of ports
+my %wanted;
+if (-r $wanted_ports_list) {
+	if (open(WANTED, $wanted_ports_list)) {
+		while (<WANTED>) {
+			chomp;
+			$wanted{$_} = 1;
+		}
+		close(WANTED);
+	}
+}
+
+# Go through all the ports and find ones
+# that don't have +REQUIRED_BY files or where
+# those files are empty.
+my @orphans;
+my %installed_port;
+if (opendir(PKG_DIR, $pkg_dir)) {
+	my @directories = grep -d "$pkg_dir/$_", readdir PKG_DIR;
+	foreach (sort @directories) {
+		unless	(
+					/^\./o ||
+					-s "$pkg_dir/$_/+REQUIRED_BY"
+				)
+		{
+			push @orphans, $_;
+		}
+		s/\-[0-9].*$//o;
+		$installed_port{$_} = 1;
+	}
+	closedir(PKG_DIR)
+}
+
+# Find each port that is an orphan
+# and is not in the wanted list.
+foreach (@orphans) {
+	my $matcher = $_;
+	$matcher =~ s/-\d.*$//o;
+	push @portsdiff, "$_+" unless $wanted{$matcher};
+}
+
+# Find ports that are missing
+if ($mode eq "portdiff") {
+	foreach my $port (sort keys %wanted) {
+		push @portsdiff, "$port-" unless $installed_port{$port};
+	}
+}
+
+foreach (sort @portsdiff) {
+	if ($mode eq "portdiff") {
+		s/^(.*)([\+\-])$/$2$1\n/;
+	} else {
+		s/\+$/\n/o;
+	}
+	print;
+}
+
+=pod
+
+=head1 NAME
+
+B<portdiff>, B<portorphans> -- Find the ports which you don't wish to have installed.
+
+=head1 SYNOPSIS
+
+B<portdiff>
+
+B<portorphans>
+
+=head1 DESCRIPTION
+
+Finds the difference between a list of ports that you want to have on your system and the list of ports currently installed.
+
+When called as portdiff, it produces diff(1)-like output, when called as portorphans it prints a list of ports that are installed but are not in your list of wanted ports.
+
+To create your list of wanted ports, do something like:
+
+C<< portorphans | perl -pe 's/-\d.*$//' > ~/.portdiffrc >>
+
+then edit the .portdiffrc file to remove the ports you don't want.
+
+My usual port maintenance routine goes something like:
+
+=over
+
+=item 1) portupgrade -a
+
+=item 2) portorphans
+
+=over
+
+=item a) If portorphans returns nothing, I'm done
+
+=item b) If portorphans' output contains a port I wish to keep, I add that to ~/.portdiffrc and goto 2.
+
+=item c) If portorphans returns some output, I run 'portorphans | xargs pkg_delete' and goto 2.
+
+=back
+
+=back
+
+This keeps the list of ports installed on my machine to a minimum.
+
+=head1 FILES
+
+=over
+
+=item ~/.portdiffrc - The list of ports which you wish to have installed.
+
+=item /var/db/pkg - The location of the installed package database.
+
+=item 
+
+=back
+
+=head1 SEE ALSO
+
+pkg_delete(1), portupgrade(1)
+
+=cut
